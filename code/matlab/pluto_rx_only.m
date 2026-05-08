@@ -63,9 +63,14 @@ fprintf('按 Ctrl+C 停止\n\n');
 % 创建图形窗口
 figure('Name', 'SDR接收信号', 'NumberTitle', 'off');
 
+% RX端需要发送空数据来触发接收
+tx_zeros = zeros(1, signal_len);
+
 i = 1;
 while true
-    % 接收
+    % 接收 (发送零数据)
+    config{1} = tx_zeros;
+    config{2} = tx_zeros;
     output = stepImpl(sdr, config);
     rx_signal = double(output{1}) + j * double(output{2});
     
