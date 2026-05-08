@@ -155,15 +155,20 @@ function pluto_chat_dual()
             output = stepImpl(sdr, config);
             rx_signal = double(output{1}(1:target_len)) + 1i*double(output{2}(1:target_len));
             
+            % Calculate signal energy
+            energy = sum(abs(rx_signal).^2) / length(rx_signal);
+            set(syncText, 'String', sprintf('Energy: %.2f', energy));
+            
             [msg, success] = decode_rx(rx_signal);
             
             if success && ~isempty(msg)
                 rx_count = rx_count + 1;
                 addMsg(msg, 'recv');
-                set(syncText, 'String', sprintf('RX: %d', rx_count));
+                set(syncText, 'String', sprintf('RX: %d | MSG!', rx_count));
             end
             
-        catch
+        catch ME
+            set(syncText, 'String', 'Error');
         end
     end
     
