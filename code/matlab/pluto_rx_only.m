@@ -7,20 +7,21 @@ j = 1i;
 
 %% ========== 1. 连接SDR ==========
 fprintf('连接接收端SDR (192.168.2.1)...\n');
-sdr = iio_sys_obj_matlab;
-sdr.ip_address = '192.168.2.1';
-sdr.dev_name = 'ad9361';
-sdr.in_ch_no = 2;   % 保留TX功能
-sdr.out_ch_no = 2;  % 接收通道
-sdr.out_ch_size = 40000;
-sdr = sdr.setupImpl();
 
-fprintf('✓ 接收端SDR已连接！\n\n');
-
-%% ========== 2. 配置参数 ==========
 Fs = 40e6;           % 采样率 40 MHz
 Fc = 2e9;            % 载波频率 2 GHz
 signal_len = 40000;  % 信号长度
+
+sdr = iio_sys_obj_matlab;
+sdr.ip_address = '192.168.2.1';
+sdr.dev_name = 'ad9361';
+sdr.in_ch_no = 2;   % 发送通道
+sdr.out_ch_no = 2;   % 接收通道
+sdr.in_ch_size = signal_len;
+sdr.out_ch_size = signal_len * 2;  % RX需要2倍长度
+sdr = sdr.setupImpl();
+
+fprintf('✓ 接收端SDR已连接！\n\n');
 
 %% ========== 3. 设置射频参数 ==========
 config = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
@@ -63,16 +64,19 @@ fprintf('按 Ctrl+C 停止\n\n');
 % 创建图形窗口
 figure('Name', 'SDR接收信号', 'NumberTitle', 'off');
 
-% RX端需要发送空数据来触发接收
+% RX端需要发送数据来触发接收
 tx_zeros = zeros(1, signal_len);
 
 i = 1;
 while true
-    % 接收 (发送零数据)
+    % 发送零数据并接收
     config{1} = tx_zeros;
     config{2} = tx_zeros;
     output = stepImpl(sdr, config);
-    rx_signal = double(output{1}) + j * double(output{2});
+    
+    % 接收数据是长度的2倍，取前半部分
+    rx_full = double(output{1}) + j * double(output{2});
+    rx_signal = rx_full(1:signal_len);
     
     % 显示
     fprintf('接收第 %d 帧 (长度: %d)\n', i, length(rx_signal));
