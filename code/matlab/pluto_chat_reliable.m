@@ -41,8 +41,8 @@ function pluto_chat_reliable()
     
     % State
     setappdata(hFig,'running',false);
-    txcount = 0;
-    rxcount = 0;
+    setappdata(hFig,'txcount',0);
+    setappdata(hFig,'rxcount',0);
     
     function onConnect(~,~)
         try
@@ -114,11 +114,15 @@ function pluto_chat_reliable()
             prefix = '[SYS]';
         end
         oldStr = get(logList,'String');
-        if isempty(oldStr), oldStr = {}; end
-        oldStr(end+1,:) = {[prefix ' ' ts '] ' msg]};
+        if iscell(oldStr) && isempty(oldStr)
+            oldStr = {};
+        elseif ~iscell(oldStr)
+            oldStr = {oldStr};
+        end
+        oldStr{end+1} = [prefix ' ' ts '] ' msg];
         set(logList,'String',oldStr);
-        listboxAutoScroll(logList);
-        txcount = txcount + 1;
+        c = getappdata(hFig,'txcount') + 1;
+        setappdata(hFig,'txcount',c);
     end
 
     function onSend(~,~)
@@ -211,7 +215,7 @@ function pluto_chat_reliable()
             rx = double(out{1}(1:rxlen)) + 1i*double(out{2}(1:rxlen));
             e = sum(abs(rx).^2)/length(rx);
             
-            statusText.String = sprintf('E:%.4f | TX:%d RX:%d', e, txcount, rxcount);
+            statusText.String = sprintf('E:%.4f | TX:%d RX:%d', e, getappdata(hFig,'txcount'), getappdata(hFig,'rxcount'));
             
             if e > 0.01
                 [msg, ok, isAck] = decodeFrame(rx);
@@ -227,9 +231,10 @@ function pluto_chat_reliable()
                     statusText.String = sprintf('ACK OK! | E:%.4f', e);
                     
                 elseif ok && ~isempty(msg)
-                    rxcount = rxcount + 1;
+                    rc = getappdata(hFig,'rxcount') + 1;
+                    setappdata(hFig,'rxcount',rc);
                     addLog(msg, 'recv');
-                    statusText.String = sprintf('RX:%d DECODED! | E:%.4f', rxcount, e);
+                    statusText.String = sprintf('RX:%d DECODED! | E:%.4f', rc, e);
                     
                     % Send ACK back
                     sendAck();
