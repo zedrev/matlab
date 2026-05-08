@@ -3,8 +3,8 @@
 
 function pluto_chat_dual()
     ip = '192.168.2.1';
-    Fc = 2.45e9;
-    Fs = 40e6;
+    Fc = 915e6;      % 915 MHz - best for short range!
+    Fs = 40e6;       % Sampling rate
     audio_fc = 200e3;
     buf_size = 80000;
     
