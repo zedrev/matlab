@@ -168,7 +168,7 @@ function pluto_chat_dual()
             end
             
         catch ME
-            set(syncText, 'String', 'Error');
+            set(syncText, 'String', ['Err: ' ME.message(1:min(20,end))]);
         end
     end
     
