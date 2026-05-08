@@ -20,10 +20,11 @@ function pluto_chat_v2(varargin)
     Fs = p.Results.Fs;
     audio_fc = p.Results.audio_fc;
     
-    % Add library paths
-    scriptPath = fileparts(which(mfilename));
-    addpath(genpath(fullfile(scriptPath, '../../library')));
-    addpath(genpath(fullfile(scriptPath, '../BPSK')));
+    % Add library paths - use script location
+    scriptDir = fileparts(mfilename('fullpath'));
+    addpath(fullfile(scriptDir, '../../library/matlab'));
+    addpath(fullfile(scriptDir, 'BPSK/transmitter'));
+    addpath(fullfile(scriptDir, 'BPSK/receiver'));
     
     global cyc;
     cyc = 0;
