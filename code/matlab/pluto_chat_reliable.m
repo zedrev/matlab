@@ -359,49 +359,50 @@ function pluto_chat_reliable()
             fullHeader = [preamblePattern, syncPattern];
             
             corr = abs(conv(fliplr(fullHeader), downSampled(1:min(3000,end))));
-            [~, maxIdx] = max(corr);
-            startIdx = maxIdx - length(fullHeader) + 1;
+            [~, maxIdx] = max(corr(:));
+            startIdx = floor(double(maxIdx)) - length(fullHeader) + 1;
             
             if startIdx < 10 || startIdx > length(downSampled) - 200
                 return;
             end
             
-            % Extract frame fields after header
-            hdrEnd = startIdx + PREAMBLE_LEN + SYNC_LEN - 1;
+            % Extract frame fields after header - all indices as scalars
+            hdrEnd = floor(double(startIdx + PREAMBLE_LEN + SYNC_LEN - 1));
             dataStart = hdrEnd + 1;
             
-            if dataStart + LEN_FIELD + 8 > length(downSampled)
+            if double(dataStart) + LEN_FIELD + 8 > length(downSampled)
                 return;
             end
             
             % Read length field
-            lenBits = downSampled(dataStart:dataStart+LEN_FIELD-1) < 0;
-            nDataBits = bi2de(lenBits') * 8;
-            nDataBits = min(nDataBits, 200); % Limit max message size
-            nDataBits = floor(double(nDataBits)); % Ensure integer scalar
+            lEnd = dataStart + LEN_FIELD - 1;
+            lenBits = downSampled(dataStart:lEnd) < 0;
+            nDataBits = double(bi2de(lenBits')) * 8;
+            nDataBits = min(floor(nDataBits), 200);
             
             % Read CRC
             crcStart = dataStart + LEN_FIELD;
-            crcRx = downSampled(crcStart:crcStart+7) < 0;
+            cEnd = crcStart + 7;
+            crcRx = downSampled(crcStart:cEnd) < 0;
             
             % Read data
             dataStart2 = crcStart + 8;
-            if dataStart2 + nDataBits > length(downSampled)
-                nDataBits = double(length(downSampled)) - dataStart2;
-            end
+            maxBits = length(downSampled) - dataStart2;
+            nDataBits = min(floor(double(nDataBits)), maxBits);
             
             if nDataBits < 8
                 return;
             end
             
-            dEnd = min(floor(dataStart2 + nDataBits - 1), length(downSampled));
-            dEnd = max(dEnd, dataStart2); % Ensure valid range
-            dataBits = downSampled(dataStart2:floor(double(dEnd))) < 0;
+            dataEnd = floor(dataStart2 + nDataBits - 1);
+            dataEnd = min(dataEnd, length(downSampled));
+            dataIdxs = floor(dataStart2):dataEnd;
+            dataBits = downSampled(dataIdxs) < 0;
             
             % Convert bits to bytes
             nFullBytes = floor(double(length(dataBits))/8);
-            dEnd2 = min(floor(double(nFullBytes*8)), length(dataBits));
-            data8 = dataBits(1:floor(double(dEnd2)));
+            byteEnd = min(floor(nFullBytes * 8), length(dataBits));
+            data8 = dataBits(1:byteEnd);
             data8 = reshape(data8, 8, [])';
             bytes = uint8(bi2de(data8));
             
