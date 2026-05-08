@@ -147,6 +147,7 @@ function pluto_chat_reliable()
             end
             
             txdata = makeFrame(msg);
+            txdata = txdata(:)';  % Ensure row vector
             
             cfg{1} = real(txdata);
             cfg{2} = imag(txdata);
@@ -178,6 +179,7 @@ function pluto_chat_reliable()
             sdr = getappdata(hFig,'sdr');
             cfg = getappdata(hFig,'cfg');
             txdata = makeFrame(msg);
+            txdata = txdata(:)';
             cfg{1} = real(txdata);
             cfg{2} = imag(txdata);
             stepImpl(sdr, cfg);
@@ -207,8 +209,11 @@ function pluto_chat_reliable()
                 return;
             end
             
-            len1 = min(buf_size, length(out{1}));
-            len2 = min(buf_size, length(out{2}));
+            o1 = out{1}; o1 = o1(:)';
+            o2 = out{2}; o2 = o2(:)';
+            
+            len1 = min(buf_size, length(o1));
+            len2 = min(buf_size, length(o2));
             rxlen = min(len1, len2);
             
             if rxlen < 1
@@ -216,7 +221,7 @@ function pluto_chat_reliable()
                 return;
             end
             
-            rx = double(out{1}(1:rxlen)) + 1i*double(out{2}(1:rxlen));
+            rx = double(o1(1:rxlen)) + 1i*double(o2(1:rxlen));
             e = sum(abs(rx).^2)/length(rx);
             
             statusText.String = sprintf('E:%.4f | TX:%d RX:%d', e, getappdata(hFig,'txcount'), getappdata(hFig,'rxcount'));
@@ -259,6 +264,7 @@ function pluto_chat_reliable()
             sdr = getappdata(hFig,'sdr');
             cfg = getappdata(hFig,'cfg');
             txdata = makeFrame('<ACK>');
+            txdata = txdata(:)';
             cfg{1} = real(txdata);
             cfg{2} = imag(txdata);
             stepImpl(sdr, cfg);
