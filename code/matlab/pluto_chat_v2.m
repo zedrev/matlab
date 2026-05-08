@@ -269,7 +269,7 @@ function pluto_chat_v2(varargin)
             config{1} = tx_zeros;
             config{2} = tx_zeros;
             output = stepImpl(sdr, config);
-            rx_signal = double(output{1}) + 1i*double(output{2});
+            rx_signal = double(output{1}(1:80000)) + 1i*double(output{2}(1:80000));
             
             updateSyncStatus('Decoding...');
             [msg, success, sync_info] = improved_rx(rx_signal);
@@ -289,6 +289,8 @@ function pluto_chat_v2(varargin)
     
     function txdata = improved_tx(msgStr)
         % Simple BPSK transmission
+        target_len = 80000;
+        
         % 1. Text to bits
         msg_bytes = double(uint8(msgStr));
         bits = dec2bin(msg_bytes) - '0';
@@ -296,7 +298,7 @@ function pluto_chat_v2(varargin)
         msg_bits = bits(:)';
         
         % 2. Simple sync header (repeated pattern)
-        header = repmat([1 -1 1 -1], 1, 32);  % 128 bits sync header
+        header = repmat([1 -1 1 -1], 1, 32);  % 128 bits
         
         % 3. Combine header + data
         tx_bits = [header, msg_bits];
@@ -317,12 +319,14 @@ function pluto_chat_v2(varargin)
         t = (0:length(sig_filtered)-1) / Fs;
         tx_signal = sig_filtered .* exp(1j * 2 * pi * audio_fc * t);
         
-        % 7. Prepare for PLUTO (repeat to fill buffer)
+        % 7. Prepare for PLUTO - FIXED length
         txdata = real(tx_signal);
         txdata = txdata / max(abs(txdata)) * 0.8;
         txdata = round(txdata * 2^14);
-        txdata = repmat(txdata(:)', 8, 1);
-        txdata = txdata(1:min(80000,end))';
+        
+        % Repeat to reach target length
+        txdata = repmat(txdata(:)', 1, ceil(target_len / length(txdata)));
+        txdata = txdata(1:target_len);
     end
     
     function [text, success, sync_info] = improved_rx(rxdata)
