@@ -129,18 +129,24 @@ function pluto_chat_dual()
             
             e = sum(abs(rx).^2)/length(rx);
             
-            [msg,ok] = decode(rx);
-            
-            if ok
-                rxcount = rxcount+1;
-                addLog(msg,'recv');
-                set(debugText,'String',sprintf('RX:%d E:%.4f GOT IT!',rxcount,e));
+            % Always show E first
+            if e > 0.01
+                set(debugText,'String',sprintf('E:%.4f SIGNAL!',e));
             else
-                set(debugText,'String',sprintf('TX:%d RX:%d E:%.4f',txcount,rxcount,e));
+                set(debugText,'String',sprintf('E:%.4f noise',e));
             end
             
-        catch ME
-            set(debugText,'String',['ERR:' ME.message(1:25)]);
+            try
+                [msg,ok] = decode(rx);
+                
+                if ok
+                    rxcount = rxcount+1;
+                    addLog(msg,'recv');
+                    set(debugText,'String',sprintf('RX:%d DECODED! E:%.4f',rxcount,e));
+                end
+            catch ME
+                set(debugText,'String',['DEC_ERR:' ME.message(1:20)]);
+            end
         end
     end
     
