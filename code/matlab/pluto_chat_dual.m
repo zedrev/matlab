@@ -123,18 +123,24 @@ function pluto_chat_dual()
             
             if length(out) >= 2
                 rx = double(out{1}(1:buf_size)) + 1i*double(out{2}(1:buf_size));
-                e = sum(abs(rx).^2)/length(rx);
-                set(debugText,'String',sprintf('TX:%d RX:%d E:%.4f',txcount,rxcount,e));
-                
-                [msg,ok] = decode(rx);
-                if ok
-                    rxcount = rxcount+1;
-                    addLog(msg,'recv');
-                    set(debugText,'String',sprintf('TX:%d RX:%d GOT IT!',txcount,rxcount));
-                end
+            else
+                rx = zeros(1,buf_size);
             end
+            
+            e = sum(abs(rx).^2)/length(rx);
+            
+            [msg,ok] = decode(rx);
+            
+            if ok
+                rxcount = rxcount+1;
+                addLog(msg,'recv');
+                set(debugText,'String',sprintf('RX:%d E:%.4f GOT IT!',rxcount,e));
+            else
+                set(debugText,'String',sprintf('TX:%d RX:%d E:%.4f',txcount,rxcount,e));
+            end
+            
         catch ME
-            set(debugText,'String',ME.message(1:30));
+            set(debugText,'String',['ERR:' ME.message(1:25)]);
         end
     end
     
