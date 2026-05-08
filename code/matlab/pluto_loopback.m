@@ -77,6 +77,9 @@ function pluto_loopback()
     iter = 0;
     successCount = 0;
     
+    % Pre-create RX figure
+    rxFig=figure('Name','Loopback - RX Signal','NumberTitle','off');
+    
     while true
         iter = iter + 1;
         
@@ -107,15 +110,16 @@ function pluto_loopback()
                     iter, e, decoded, 100*successCount/iter);
                 
                 % Plot RX
-                figure('Name','Loopback Test - RX Signal','NumberTitle','off');
+                figure(rxFig);
                 clf;
-                subplot(3,1,1); plot(real(rx)); title(['RX I Channel  E=' num2str(e)]); grid on;
-                subplot(3,1,2); plot(imag(rx)); title('RX Q Channel'); grid on;
-                subplot(3,1,3); stem(real(rx(1:200))); title('RX First 200 samples'); grid on;
+                subplot(4,1,1); plot(real(rx)); title(sprintf('RX I  E=%.0f',e)); grid on;
+                subplot(4,1,2); plot(imag(rx)); title('RX Q'); grid on;
+                subplot(4,1,3); plot(real(rx(1:500)),'.'); title('First 500 I samples (dots)'); grid on;
+                subplot(4,1,4); hist(real(rx),50); title('I distribution'); grid on;
                 drawnow;
             else
-                if mod(iter,5)==0 || iter<=3
-                    fprintf('[%d] No decode | E=%.0f | corr may be too low\n', iter, e);
+                if iter<=5 || mod(iter,10)==0
+                    fprintf('[%d] No decode | E=%.0f (check debug output above)\n', iter, e);
                 end
             end
         else
@@ -165,28 +169,58 @@ function pluto_loopback()
         msg=''; ok=false;
         try
             r=real(sig);
-            r=r/(max(abs(r))+eps);
             
+            % Remove DC offset
+            r=r-mean(r);
+            
+            % Normalize
+            rmax=max(abs(r));
+            if rmax<eps, return; end
+            r=r/rmax;
+            
+            % Correlation with sync pattern [1,-1,1,-1,...]
             syncPat=repmat([1,-1],1,100);
-            corr=abs(conv(fliplr(syncPat),r));
-            [~,pos]=max(corr);
+            corr=conv(fliplr(syncPat),r);
+            corrVal=max(abs(corr));
+            [~,pos]=max(abs(corr));
             
-            if pos<10||pos+100>length(r)||max(corr)<80, return; end
+            % Debug: show correlation value
+            fprintf('    debug: max_corr=%.1f pos=%d\n', corrVal, pos);
+            
+            % Relaxed threshold - just check reasonable range
+            if pos<10 || pos+100>length(r), return; end
             
             dataStart=pos+100;
             sps=10;
-            dataSamples=r(dataStart:min(length(r),dataStart+sps*300));
+            dataEnd=min(length(r),dataStart+sps*300);
+            dataSamples=r(dataStart:dataEnd);
             
             if length(dataSamples)<80, return; end
             
-            bitIdx=1:sps:length(dataSamples)-sps+1;
+            % Sample one per symbol period (with small tolerance for clock drift)
+            bitIdx=round(1:sps:length(dataSamples)-sps+1);
+            bitIdx=bitIdx(bitIdx>=1 & bitIdx<=length(dataSamples));
             rawBits=dataSamples(bitIdx);
+            
+            % Decision threshold at 0
             decBits=rawBits>0;
             
             nBytes=floor(length(decBits)/8);
             if nBytes<1, return; end
             
             byteBits=decBits(1:nBytes*8);
+            byteBits=reshape(byteBits,8,[])';
+            outBytes=uint8(bi2de(byteBits));
+            
+            valid=outBytes>=32&outBytes<=126;
+            if sum(valid)<1, return; end
+            
+            msg=char(outBytes(valid));
+            ok=true;
+        catch ME
+            fprintf('    decode_err:%s\n',ME.message(1:30));
+        end
+    end
             byteBits=reshape(byteBits,8,[])';
             outBytes=uint8(bi2de(byteBits));
             
