@@ -153,7 +153,15 @@ function pluto_chat_dual()
             config{1} = zeros(1, target_len);
             config{2} = zeros(1, target_len);
             output = stepImpl(sdr, config);
-            rx_signal = double(output{1}(1:target_len)) + 1i*double(output{2}(1:target_len));
+            
+            % Safe access to output
+            if length(output) < 2
+                set(syncText, 'String', 'No RX data');
+                return;
+            end
+            
+            rx_len = min(length(output{1}), length(output{2}), target_len);
+            rx_signal = double(output{1}(1:rx_len)) + 1i*double(output{2}(1:rx_len));
             
             % Calculate signal energy
             energy = sum(abs(rx_signal).^2) / length(rx_signal);
@@ -173,6 +181,7 @@ function pluto_chat_dual()
     end
     
     function txdata = generate_tx(msgStr)
+        % Text to bits
         % Text to bits
         msg_bytes = double(uint8(msgStr));
         bits = dec2bin(msg_bytes) - '0';
