@@ -288,36 +288,38 @@ function pluto_chat_v2(varargin)
     end
     
     function txdata = improved_tx(msgStr)
-        m_seq = tx_gen_m_seq([1 0 0 0 0 0 1]);
-        sync_symbols = tx_modulate(m_seq, 'BPSK');
+        % Simple BPSK transmission
+        % 1. Text to bits
+        msg_bytes = double(uint8(msgStr));
+        bits = dec2bin(msg_bytes) - '0';
+        bits = bits';
+        msg_bits = bits(:)';
         
-        msg_bits = str_to_bits(msgStr);
-        crc_bits = crc32(msg_bits)';
-        tx_bits = [msg_bits; crc_bits];
+        % 2. Simple sync header (repeated pattern)
+        header = repmat([1 -1 1 -1], 1, 32);  % 128 bits sync header
         
-        scramble_int = [1,1,0,1,1,0,0];
-        sym_bits = scramble(scramble_int, tx_bits);
+        % 3. Combine header + data
+        tx_bits = [header, msg_bits];
         
-        mod_symbols = tx_modulate(sym_bits, 'BPSK');
+        % 4. BPSK modulation (1 -> +1, 0 -> -1)
+        symbols = 2 * tx_bits - 1;
         
-        % Pad to multiple of 64 for insert_pilot
-        Nr = 64;
-        len = length(mod_symbols);
-        if mod(len, Nr) ~= 0
-            mod_symbols = [mod_symbols, zeros(1, Nr - mod(len, Nr))];
-        end
+        % 5. SRRC filter
+        sps = 4;
+        fir = rcosdesign(0.5, 64, sps);
         
-        data_symbols = insert_pilot(mod_symbols);
-        trans_symbols = [sync_symbols data_symbols];
+        % Up-sample and filter
+        sig_up = zeros(1, length(symbols) * sps);
+        sig_up(1:sps:end) = symbols;
+        sig_filtered = conv(sig_up, fir, 'same');
         
-        fir = rcosdesign(1, 128, 4);
-        tx_frame = upfirdn(trans_symbols, fir, 4);
-        tx_frame = [tx_frame, zeros(1, 2000)];
+        % 6. Audio carrier modulation
+        t = (0:length(sig_filtered)-1) / Fs;
+        tx_signal = sig_filtered .* exp(1j * 2 * pi * audio_fc * t);
         
-        t = (0:length(tx_frame)-1) / Fs;
-        tx_signal = tx_frame .* exp(1j * 2 * pi * audio_fc * t);
-        
+        % 7. Prepare for PLUTO (repeat to fill buffer)
         txdata = real(tx_signal);
+        txdata = txdata / max(abs(txdata)) * 0.8;
         txdata = round(txdata * 2^14);
         txdata = repmat(txdata(:)', 8, 1);
         txdata = txdata(1:min(80000,end))';
@@ -331,75 +333,42 @@ function pluto_chat_v2(varargin)
         rx_signal = rxdata;
         
         try
-            fir = rcosdesign(1, 128, 4);
-            rx_sig_filter = upfirdn(rx_signal, fir, 1);
+            % 1. Down-convert from audio carrier
+            t = (0:length(rx_signal)-1) / Fs;
+            baseband = rx_signal .* exp(-1j * 2 * pi * audio_fc * t);
+            baseband = real(baseband);
             
-            c1 = max([abs(real(rx_sig_filter)), abs(imag(rx_sig_filter))]);
-            rx_sig_norm = rx_sig_filter / c1;
+            % 2. Matched filter
+            sps = 4;
+            fir = rcosdesign(0.5, 64, sps);
+            filtered = conv(baseband, fir, 'same');
             
-            [~, rx_sig_down] = rx_timing_recovery(rx_sig_norm);
+            % 3. Down-sample
+            sampled = filtered(1:sps:end);
             
-            local_sync = tx_modulate(tx_gen_m_seq([1 0 0 0 0 0 1]), 'BPSK');
-            [rx_frame, ~, ~, ~] = rx_package_search(rx_sig_down, local_sync, 703);
+            % 4. Simple correlation sync
+            header = repmat([1 -1 1 -1], 1, 32);
+            [~, max_idx] = max(abs(conv(fliplr(header), sampled(1:min(2000,end)))));
+            start_idx = max_idx - length(header) + 1;
             
-            if isempty(rx_frame) || length(rx_frame) < 100
+            if start_idx < 1 || start_idx > length(sampled) - 500
                 return;
             end
             
-            coarse_sync_seq = rx_frame(1:8);
-            [deltaf1, out_signal1] = rx_freq_sync(coarse_sync_seq, 4, rx_frame);
+            % 5. Extract bits
+            extracted = sampled(start_idx:start_idx+500);
+            bits = extracted(1:512) > 0;
             
-            fine_sync_seq_1 = out_signal1(1:120);
-            [deltaf2, out_signal2] = rx_freq_sync(fine_sync_seq_1, 2, out_signal1);
+            % 6. Decode text
+            data_bits = bits(129:end);  % Skip header
+            data_bytes = uint8(bi2de(reshape(data_bits(1:floor(length(data_bits)/8)*8), 8, [])'));
+            data_bytes = data_bytes(data_bytes > 31 & data_bytes < 127);
             
-            fine_sync_seq_2 = out_signal2(1:120);
-            [deltaf3, out_signal3] = rx_freq_sync(fine_sync_seq_2, 2, out_signal2);
-            
-            deltaf = deltaf1 + deltaf2 + deltaf3;
-            sync_info.freq_offset = deltaf;
-            
-            [out_signal4, ~] = rx_phase_sync(out_signal3, local_sync);
-            
-            rx_no_syn_seq = out_signal4(127+1:end);
-            [out_signal6, ~] = rx_phase_track(rx_no_syn_seq);
-            
-            out_signal7 = rx_delete_pilot(out_signal6);
-            out_signal8 = rx_time_equalize(out_signal7);
-            
-            sync_info.constellation = out_signal8;
-            
-            [soft_bits_out, ~] = rx_bpsk_demod(out_signal8);
-            
-            Si = [1 1 0 1 1 0 0];
-            m = 0;
-            for i = 1:length(soft_bits_out)
-                [c, Si] = descramble(soft_bits_out(i), Si);
-                m = m + 1;
-                y(m) = c;
-            end
-            soft_bits_out = y;
-            
-            if length(soft_bits_out) < 32
+            if isempty(data_bytes)
                 return;
             end
             
-            ret = crc32(soft_bits_out(1:end-32)');
-            crc_bits_32 = soft_bits_out(end-31:end);
-            crc_outputs = sum(xor(ret, crc_bits_32), 2);
-            
-            if crc_outputs ~= 0
-                return;
-            end
-            
-            msg = soft_bits_out(1:end-32)';
-            w = [128 64 32 16 8 4 2 1];
-            Ny = length(msg) / 8;
-            y = zeros(1, Ny);
-            for i = 0:Ny-1
-                y(i+1) = w * msg(8*i + (1:8));
-            end
-            
-            text = char(y);
+            text = char(data_bytes)';
             success = true;
             
         catch
