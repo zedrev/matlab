@@ -1,10 +1,8 @@
 % PLUTO Chat - Simple Bidirectional Version
-% Usage: pluto_chat_dual
-
 function pluto_chat_dual()
     ip = '192.168.2.1';
-    Fc = 915e6;      % 915 MHz - best for short range!
-    Fs = 40e6;       % Sampling rate
+    Fc = 915e6;
+    Fs = 40e6;
     audio_fc = 200e3;
     buf_size = 80000;
     
@@ -63,7 +61,6 @@ function pluto_chat_dual()
             
             cfg = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
             
-            % Set channels - direct calls (no nested functions)
             idx = sdr.getInChannel('TX_LO_FREQ'); if idx>=1, cfg{idx}=Fc; end
             idx = sdr.getInChannel('TX_SAMPLING_FREQ'); if idx>=1, cfg{idx}=Fs; end
             idx = sdr.getInChannel('TX_RF_BANDWIDTH'); if idx>=1, cfg{idx}=20e6; end
@@ -161,7 +158,6 @@ function pluto_chat_dual()
         sig = sig/max(abs(sig))*0.8;
         sig = round(sig*2^14);
         
-        % Repeat to fill buffer
         txdata = repmat(sig(:)', 1, ceil(buf_size/length(sig)));
         txdata = txdata(1:buf_size);
     end
@@ -189,8 +185,12 @@ function pluto_chat_dual()
             data = bits(129:129+min(length(bits)-128,400));
             if length(data)<8, return; end
             
-            bytes = uint8(bi2de(reshape(data(1:floor(length(data)/8)*8),8,[])')));
-            bytes = bytes(bytes>31 & bytes<127);
+            n8 = floor(length(data)/8)*8;
+            d8 = reshape(data(1:n8), 8, [])';
+            bytes = uint8(bi2de(d8));
+            
+            valid_idx = (bytes > 31) & (bytes < 127);
+            bytes = bytes(valid_idx);
             if isempty(bytes), return; end
             
             text = char(bytes)';
