@@ -378,6 +378,7 @@ function pluto_chat_reliable()
             lenBits = downSampled(dataStart:dataStart+LEN_FIELD-1) < 0;
             nDataBits = bi2de(lenBits') * 8;
             nDataBits = min(nDataBits, 200); % Limit max message size
+            nDataBits = floor(double(nDataBits)); % Ensure integer scalar
             
             % Read CRC
             crcStart = dataStart + LEN_FIELD;
@@ -386,17 +387,20 @@ function pluto_chat_reliable()
             % Read data
             dataStart2 = crcStart + 8;
             if dataStart2 + nDataBits > length(downSampled)
-                nDataBits = length(downSampled) - dataStart2;
+                nDataBits = double(length(downSampled)) - dataStart2;
             end
+            
             if nDataBits < 8
                 return;
             end
             
-            dataBits = downSampled(dataStart2:dataStart2+nDataBits-1) < 0;
+            dEnd = min(dataStart2 + nDataBits - 1, length(downSampled));
+            dataBits = downSampled(dataStart2:dEnd) < 0;
             
             % Convert bits to bytes
-            nFullBytes = floor(length(dataBits)/8);
-            data8 = dataBits(1:nFullBytes*8);
+            nFullBytes = floor(double(length(dataBits))/8);
+            dEnd2 = min(nFullBytes*8, length(dataBits));
+            data8 = dataBits(1:dEnd2);
             data8 = reshape(data8, 8, [])';
             bytes = uint8(bi2de(data8));
             
