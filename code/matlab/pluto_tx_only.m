@@ -25,10 +25,27 @@ signal_len = 40000;  % 信号长度
 %% ========== 3. 设置射频参数 ==========
 input = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
 
+% 设置TX参数
 input{sdr.getInChannel('TX_LO_FREQ')} = Fc;
 input{sdr.getInChannel('TX_SAMPLING_FREQ')} = Fs;
 input{sdr.getInChannel('TX_RF_BANDWIDTH')} = 20e6;
-input{sdr.getInChannel('TX1_GAIN')} = 0;  % 发射增益 0-71 dB
+
+% 尝试不同版本的TX增益通道名
+tx_gain_channels = {'TX1_GAIN', 'TX_GAIN', 'TX_HAD_GAIN'};
+tx_gain_set = false;
+for idx = 1:length(tx_gain_channels)
+    ch = tx_gain_channels{idx};
+    ch_idx = sdr.getInChannel(ch);
+    if ch_idx > 0
+        input{ch_idx} = 30;  % 发射增益 0-71 dB
+        fprintf('已设置 %s = 30 dB\n', ch);
+        tx_gain_set = true;
+        break;
+    end
+end
+if ~tx_gain_set
+    fprintf('警告: 未找到TX增益通道，跳过设置\n');
+end
 
 fprintf('载波频率: %.2f GHz\n', Fc/1e9);
 fprintf('采样率: %.1f MHz\n', Fs/1e6);

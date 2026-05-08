@@ -210,21 +210,34 @@ function pluto_chat_v2(varargin)
             
             config = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
             
+            % 辅助函数：安全设置通道
+            function safeSet(ch_name, value)
+                ch_idx = sdr.getInChannel(ch_name);
+                if ch_idx > 0
+                    config{ch_idx} = value;
+                end
+            end
+            
             if strcmp(mode, 'tx')
-                config{sdr.getInChannel('TX_LO_FREQ')} = Fc;
-                config{sdr.getInChannel('TX_SAMPLING_FREQ')} = Fs;
-                config{sdr.getInChannel('TX_RF_BANDWIDTH')} = 20e6;
-                config{sdr.getInChannel('TX1_GAIN')} = 30;
-                config{sdr.getInChannel('RX_LO_FREQ')} = Fc;
-                config{sdr.getInChannel('RX1_GAIN_MODE')} = 'manual';
-                config{sdr.getInChannel('RX1_GAIN')} = 20;
+                safeSet('TX_LO_FREQ', Fc);
+                safeSet('TX_SAMPLING_FREQ', Fs);
+                safeSet('TX_RF_BANDWIDTH', 20e6);
+                safeSet('TX1_GAIN', 30);
+                safeSet('TX_GAIN', 30);
+                safeSet('RX_LO_FREQ', Fc);
+                safeSet('RX1_GAIN_MODE', 'manual');
+                safeSet('RX_GAIN_MODE', 'manual');
+                safeSet('RX1_GAIN', 20);
+                safeSet('RX_GAIN', 20);
             else
-                config{sdr.getInChannel('RX_LO_FREQ')} = Fc;
-                config{sdr.getInChannel('RX_SAMPLING_FREQ')} = Fs;
-                config{sdr.getInChannel('RX_RF_BANDWIDTH')} = 20e6;
-                config{sdr.getInChannel('RX1_GAIN_MODE')} = 'manual';
-                config{sdr.getInChannel('RX1_GAIN')} = 40;
-                config{sdr.getInChannel('TX_LO_FREQ')} = Fc;
+                safeSet('RX_LO_FREQ', Fc);
+                safeSet('RX_SAMPLING_FREQ', Fs);
+                safeSet('RX_RF_BANDWIDTH', 20e6);
+                safeSet('RX1_GAIN_MODE', 'manual');
+                safeSet('RX_GAIN_MODE', 'manual');
+                safeSet('RX1_GAIN', 40);
+                safeSet('RX_GAIN', 40);
+                safeSet('TX_LO_FREQ', Fc);
             end
             
             setappdata(hFig, 'sdr', sdr);

@@ -28,8 +28,30 @@ config = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
 config{sdr.getInChannel('RX_LO_FREQ')} = Fc;
 config{sdr.getInChannel('RX_SAMPLING_FREQ')} = Fs;
 config{sdr.getInChannel('RX_RF_BANDWIDTH')} = 20e6;
-config{sdr.getInChannel('RX1_GAIN_MODE')} = 'manual';
-config{sdr.getInChannel('RX1_GAIN')} = 30;  % 接收增益 0-71 dB
+
+% 尝试不同版本的RX增益通道名
+rx_gain_mode_channels = {'RX1_GAIN_MODE', 'RX_GAIN_MODE'};
+rx_gain_channels = {'RX1_GAIN', 'RX_GAIN', 'RX_HAD_GAIN'};
+
+for idx = 1:length(rx_gain_mode_channels)
+    ch = rx_gain_mode_channels{idx};
+    ch_idx = sdr.getInChannel(ch);
+    if ch_idx > 0
+        config{ch_idx} = 'manual';
+        fprintf('已设置 %s = manual\n', ch);
+        break;
+    end
+end
+
+for idx = 1:length(rx_gain_channels)
+    ch = rx_gain_channels{idx};
+    ch_idx = sdr.getInChannel(ch);
+    if ch_idx > 0
+        config{ch_idx} = 40;  % 接收增益 0-71 dB
+        fprintf('已设置 %s = 40 dB\n', ch);
+        break;
+    end
+end
 
 fprintf('载波频率: %.2f GHz\n', Fc/1e9);
 fprintf('采样率: %.1f MHz\n', Fs/1e6);
