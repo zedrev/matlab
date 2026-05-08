@@ -147,7 +147,7 @@ function pluto_chat_reliable()
             if length(out)<2, return; end
             
             o1=out{1}(:)'; o2=out{2}(:)';
-            rxlen=min(buf_size,length(o1),length(o2));
+            rxlen=min(min(buf_size,length(o1)),length(o2));
             rx=o1(1:rxlen)+1i*o2(1:rxlen);
             e=sum(abs(rx).^2)/rxlen;
             
