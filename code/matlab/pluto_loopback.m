@@ -221,16 +221,5 @@ function pluto_loopback()
             fprintf('    decode_err:%s\n',ME.message(1:30));
         end
     end
-            byteBits=reshape(byteBits,8,[])';
-            outBytes=uint8(bi2de(byteBits));
-            
-            valid=outBytes>=32&outBytes<=126;
-            if sum(valid)<1, return; end
-            
-            msg=char(outBytes(valid));
-            ok=true;
-        catch
-        end
-    end
 
 end
