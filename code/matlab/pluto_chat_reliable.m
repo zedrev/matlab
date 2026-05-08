@@ -280,7 +280,7 @@ function pluto_chat_reliable()
         qOut=zeros(size(iOut));
     end
 
-    %% ========== Decode: Signal -> Text ==========
+    %% ========== Decode: Signal -> Text (same logic as loopback) ==========
     function [textOut,success,isAckFlag] = decode(sig)
         textOut=''; success=false; isAckFlag=false;
         
@@ -290,15 +290,13 @@ function pluto_chat_reliable()
             % Remove DC offset
             r=r-mean(r);
             
-            % Energy normalize
-            rNorm=sqrt(sum(r.^2));
-            if rNorm<eps, return; end
-            r=r/rNorm;
+            % Normalize to [-1,1]
+            rmax=max(abs(r));
+            if rmax<eps, return; end
+            r=r/rmax;
             
-            % Normalized correlation with sync pattern
+            % Correlation with sync pattern [1,-1,1,-1,...]
             syncPat=repmat([1,-1], 1, SYNC_LEN);
-            syncPat=syncPat/sqrt(sum(syncPat.^2));  % Normalize template
-            
             corr=conv(fliplr(syncPat), r);
             corrAbs=abs(corr);
             maxCorr=max(corrAbs);
@@ -307,12 +305,8 @@ function pluto_chat_reliable()
             % Debug output
             fprintf('[RX debug] max_corr=%.2f pos=%d\n', maxCorr, pos);
             
-            % Check correlation strength (normalized, so threshold is meaningful)
-            if maxCorr < 3.0   % Normalized threshold
-                return;
-            end
-            
-            if pos<SYNC_LEN || pos+SPS*200>length(r)
+            % Check range only (no threshold - let it try)
+            if pos<SYNC_LEN || pos+SYNC_LEN+SPS*50>length(r)
                 return;
             end
             
@@ -324,12 +318,12 @@ function pluto_chat_reliable()
             nDataSamples=length(dataSamples);
             if nDataSamples<SPS*8, return; end
             
-            % Bit sampling at SPS rate
+            % Bit sampling at SPS rate (with rounding for clock tolerance)
             bitIdxs=round(1:SPS:nDataSamples-SPS+1);
             bitIdxs=bitIdxs(bitIdxs>=1 & bitIdxs<=nDataSamples);
             rawBits=dataSamples(bitIdxs);
             
-            % Hard decision
+            % Hard decision at 0
             decBits=rawBits>0;
             
             % Bits to bytes
