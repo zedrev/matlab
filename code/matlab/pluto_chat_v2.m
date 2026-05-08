@@ -299,6 +299,14 @@ function pluto_chat_v2(varargin)
         sym_bits = scramble(scramble_int, tx_bits);
         
         mod_symbols = tx_modulate(sym_bits, 'BPSK');
+        
+        % Pad to multiple of 64 for insert_pilot
+        Nr = 64;
+        len = length(mod_symbols);
+        if mod(len, Nr) ~= 0
+            mod_symbols = [mod_symbols, zeros(1, Nr - mod(len, Nr))];
+        end
+        
         data_symbols = insert_pilot(mod_symbols);
         trans_symbols = [sync_symbols data_symbols];
         
