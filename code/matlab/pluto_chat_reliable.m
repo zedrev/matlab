@@ -1,10 +1,9 @@
 function pluto_chat_reliable()
-% PLUTO Reliable Chat - with ACK and retransmission
-% Protocol: [PREAMBLE 64] [SYNC 128] [LENGTH 16] [CRC32] [DATA]
+% PLUTO Chat - Pure Baseband (NO extra audio carrier!)
+% Direct I/Q transmission: simpler and more reliable
 %
 % Usage:
 %   pluto_chat_reliable
-%
 
     % Add paths
     scriptDir = fileparts(mfilename('fullpath'));
@@ -12,43 +11,34 @@ function pluto_chat_reliable()
 
     % Parameters
     ip = '192.168.2.1';
-    Fc = 915e6;           % RF carrier - 915 MHz best for short range!
-    Fs = 40e6;            % Sampling rate
-    audio_fc = 200000;    % Audio carrier for modulation
-    buf_size = 80000;     % Buffer size
-    
-    % Frame structure
-    PREAMBLE_LEN = 64;
-    SYNC_LEN = 128;
-    LEN_FIELD = 16;
-    CRC_BITS = 32;
+    Fc = 915e6;           % RF carrier 915 MHz
+    Fs = 1e6;             % Sampling rate 1 MHz (lower = more reliable)
+    buf_size = 10000;     % Buffer size per frame
     
     % Create figure
-    hFig = figure('Name','PLUTO Chat (Reliable)','NumberTitle','off',...
+    hFig = figure('Name','PLUTO Chat','NumberTitle','off',...
                   'Position',[100 100 600 500],'Color','w');
     
-    % UI components
     logList = uicontrol(hFig,'Style','listbox','Position',[20 80 560 380],...
                          'FontSize',11,'BackgroundColor',[0.95 0.95 0.95]);
     inputBox = uicontrol(hFig,'Style','edit','Position',[20 40 480 30],...
-                          'FontSize',12,'HorizontalAlignment','left');
+                          'FontSize',12);
     sendBtn = uicontrol(hFig,'Style','pushbutton','Position',[510 40 70 30],...
                          'String','Send','FontSize',12,'Callback',@onSend);
     connectBtn = uicontrol(hFig,'Style','pushbutton','Position',[20 10 100 28],...
                             'String','Connect','Callback',@onConnect);
     statusText = uicontrol(hFig,'Style','text','Position',[140 10 460 28],...
-                            'String','Disconnected','FontSize',10,'HorizontalAlignment','left');
-    
-    % State
+                            'String','Disconnected','FontSize',10);
+
     setappdata(hFig,'running',false);
     setappdata(hFig,'txcount',0);
     setappdata(hFig,'rxcount',0);
-    
+
     function onConnect(~,~)
         try
             statusText.String = 'Connecting...';
             drawnow;
-            
+
             sdr = iio_sys_obj_matlab;
             sdr.ip_address = ip;
             sdr.dev_name = 'ad9361';
@@ -57,51 +47,54 @@ function pluto_chat_reliable()
             sdr.in_ch_size = buf_size;
             sdr.out_ch_size = buf_size * 2;
             sdr = sdr.setupImpl();
+
+            nCfg = sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch);
+            cfg = cell(1, nCfg);
             
-            cfg = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
-            
-            idx = sdr.getInChannel('TX_LO_FREQ'); if idx>=1, cfg{idx}=Fc; end
-            idx = sdr.getInChannel('TX_SAMPLING_FREQ'); if idx>=1, cfg{idx}=Fs; end
-            idx = sdr.getInChannel('TX_RF_BANDWIDTH'); if idx>=1, cfg{idx}=20e6; end
-            idx = sdr.getInChannel('RX_LO_FREQ'); if idx>=1, cfg{idx}=Fc; end
-            idx = sdr.getInChannel('RX_SAMPLING_FREQ'); if idx>=1, cfg{idx}=Fs; end
-            idx = sdr.getInChannel('RX_RF_BANDWIDTH'); if idx>=1, cfg{idx}=20e6; end
-            idx = sdr.getInChannel('RX1_GAIN_MODE'); if idx>=1, cfg{idx}='manual'; end
-            idx = sdr.getInChannel('RX_GAIN_MODE'); if idx>=1, cfg{idx}='manual'; end
-            idx = sdr.getInChannel('RX1_GAIN'); if idx>=1, cfg{idx}=50; end
-            idx = sdr.getInChannel('RX_GAIN'); if idx>=1, cfg{idx}=50; end
-            
-            % Data channels must have arrays of correct size
-            cfg{1} = zeros(1, buf_size);
-            cfg{2} = zeros(1, buf_size);
-            
+            chSet(sdr, cfg, 'TX_LO_FREQ', Fc);
+            chSet(sdr, cfg, 'TX_SAMPLING_FREQ', Fs);
+            chSet(sdr, cfg, 'TX_RF_BANDWIDTH', 1e6);
+            chSet(sdr, cfg, 'RX_LO_FREQ', Fc);
+            chSet(sdr, cfg, 'RX_SAMPLING_FREQ', Fs);
+            chSet(sdr, cfg, 'RX_RF_BANDWIDTH', 1e6);
+            chSet(sdr, cfg, 'RX1_GAIN_MODE', 'manual');
+            chSet(sdr, cfg, 'RX_GAIN_MODE', 'manual');
+            chSet(sdr, cfg, 'RX1_GAIN', 50);
+            chSet(sdr, cfg, 'RX_GAIN', 50);
+
+            cfg{1} = zeros(1,buf_size);
+            cfg{2} = zeros(1,buf_size);
             stepImpl(sdr, cfg);
-            
+
             setappdata(hFig,'sdr',sdr);
             setappdata(hFig,'cfg',cfg);
             setappdata(hFig,'running',true);
-            
-            statusText.String = sprintf('Connected | RF: %.3f GHz | Fs: %.1f MHz', Fc/1e9, Fs/1e6);
+
+            statusText.String = sprintf('Connected | RF:%.3fGHz Fs:%.0fMHz', Fc/1e9, Fs/1e6);
             connectBtn.String = 'Disconnect';
             connectBtn.Callback = @(~,~) onDisconnect();
             
-            tObj = timer('ExecutionMode','fixedRate','Period',1.0,...
+            tObj = timer('ExecutionMode','fixedRate','Period',1.5,...
                         'TimerFcn',@recvLoop);
             setappdata(hFig,'timer',tObj);
             start(tObj);
             
         catch ME
-            statusText.String = ['Error: ' ME.message];
+            statusText.String = ['Err:' ME.message(1:min(40,end))];
+        end
+    end
+
+    function chSet(sdr, cfg, name, val)
+        idx = int32(sdr.getInChannel(name));
+        if idx >= int32(1)
+            cfg{int32(idx)} = val;
         end
     end
 
     function onDisconnect(~,~)
         setappdata(hFig,'running',false);
         tObj = getappdata(hFig,'timer');
-        if ~isempty(tObj) && isvalid(tObj)
-            stop(tObj);
-            delete(tObj);
-        end
+        if ~isempty(tObj) && isvalid(tObj), stop(tObj); delete(tObj); end
         statusText.String = 'Disconnected';
         connectBtn.String = 'Connect';
         connectBtn.Callback = @onConnect;
@@ -109,86 +102,35 @@ function pluto_chat_reliable()
 
     function addLog(msg, type)
         ts = datestr(now,'HH:MM:ss');
-        prefix = '[TX]';
-        if strcmp(type,'recv')
-            prefix = '[RX]';
-        elseif strcmp(type,'ack')
-            prefix = '[ACK]';
-        elseif strcmp(type,'sys')
-            prefix = '[SYS]';
-        end
-        oldStr = get(logList,'String');
-        if iscell(oldStr) && isempty(oldStr)
-            oldStr = {};
-        elseif ~iscell(oldStr)
-            oldStr = {oldStr};
-        end
-        oldStr{end+1} = [prefix ' ' ts '] ' msg];
-        set(logList,'String',oldStr);
-        c = getappdata(hFig,'txcount') + 1;
-        setappdata(hFig,'txcount',c);
+        pfx = '[TX]';
+        if strcmp(type,'recv'), pfx='[RX]'; elseif strcmp(type,'ack'), pfx='[ACK]'; elseif strcmp(type,'sys'), pfx='[SYS]'; end
+        old = get(logList,'String');
+        if ~iscell(old) || isempty(old), old={}; end
+        old{end+1}=[pfx ' ' ts '] ' msg];
+        set(logList,'String',old);
+        c=getappdata(hFig,'txcount')+1; setappdata(hFig,'txcount',c);
     end
 
     function onSend(~,~)
-        msg = strtrim(get(inputBox,'String'));
-        if isempty(msg)
-            return;
-        end
-        
+        msg=strtrim(get(inputBox,'String'));
+        if isempty(msg), return; end
         set(inputBox,'String','');
         
         try
-            sdr = getappdata(hFig,'sdr');
-            cfg = getappdata(hFig,'cfg');
+            sdr=getappdata(hFig,'sdr'); cfg=getappdata(hFig,'cfg');
+            if isempty(sdr), addLog('Not connected!','sys'); return; end
             
-            if isempty(sdr)
-                addLog('Not connected!','sys');
-                return;
-            end
+            [iData,qData] = makeSignal(msg);
+            iData=iData(:)'; qData=qData(:)';
             
-            txdata = makeFrame(msg);
-            txdata = txdata(:)';  % Ensure row vector
+            cfg{1}=iData; cfg{2}=qData;
+            stepImpl(sdr,cfg);
             
-            cfg{1} = real(txdata);
-            cfg{2} = imag(txdata);
-            stepImpl(sdr, cfg);
-            
-            addLog(msg, 'send');
-            statusText.String = sprintf('Sent: "%s" | Waiting ACK...', msg(1:min(20,end)));
-            
-            % Start ACK timeout timer
-            ackTimer = timer('StartDelay', 1.5, ...
-                           'TimerFcn', @(~,~) retrySend(msg));
-            start(ackTimer);
-            setappdata(hFig,'ackTimer', ackTimer);
-            setappdata(hFig,'pendingMsg', msg);
+            addLog(msg,'send');
+            statusText.String=['Sent: "' msg '" ...'];
             
         catch ME
-            addLog(['Err:' ME.message],'sys');
-        end
-    end
-
-    function retrySend(msg)
-        if ~getappdata(hFig,'running')
-            return;
-        end
-        
-        addLog(['Retry: ' msg], 'sys');
-        
-        try
-            sdr = getappdata(hFig,'sdr');
-            cfg = getappdata(hFig,'cfg');
-            txdata = makeFrame(msg);
-            txdata = txdata(:)';
-            cfg{1} = real(txdata);
-            cfg{2} = imag(txdata);
-            stepImpl(sdr, cfg);
-            
-            ackTimer = timer('StartDelay', 1.5, ...
-                           'TimerFcn', @(~,~) retrySend(msg));
-            start(ackTimer);
-            setappdata(hFig,'ackTimer', ackTimer);
-        catch
+            addLog(['Send Err:' ME.message(1:20)],'sys');
         end
     end
 
@@ -196,248 +138,133 @@ function pluto_chat_reliable()
         if ~getappdata(hFig,'running'), return; end
         
         try
-            sdr = getappdata(hFig,'sdr');
-            cfg = getappdata(hFig,'cfg');
+            sdr=getappdata(hFig,'sdr'); cfg=getappdata(hFig,'cfg');
+            sdr.out_ch_size=buf_size*2;
+            cfg{1}=zeros(1,buf_size);
+            cfg{2}=zeros(1,buf_size);
+            out=stepImpl(sdr,cfg);
             
-            sdr.out_ch_size = buf_size * 2;
-            cfg{1} = zeros(1,buf_size);
-            cfg{2} = zeros(1,buf_size);
-            out = stepImpl(sdr, cfg);
+            if length(out)<2, return; end
             
-            if length(out) < 2
-                statusText.String = 'No data';
-                return;
-            end
+            o1=out{1}(:)'; o2=out{2}(:)';
+            rxlen=min(buf_size,length(o1),length(o2));
+            rx=o1(1:rxlen)+1i*o2(1:rxlen);
+            e=sum(abs(rx).^2)/rxlen;
             
-            o1 = out{1}; o1 = o1(:)';
-            o2 = out{2}; o2 = o2(:)';
+            tc=getappdata(hFig,'txcount'); rc=getappdata(hFig,'rxcount');
+            statusText.String=sprintf('E:%.0f | TX:%d RX:%d', e, tc, rc);
             
-            len1 = min(buf_size, length(o1));
-            len2 = min(buf_size, length(o2));
-            rxlen = min(len1, len2);
-            
-            if rxlen < 1
-                statusText.String = 'Empty RX';
-                return;
-            end
-            
-            rx = double(o1(1:rxlen)) + 1i*double(o2(1:rxlen));
-            e = sum(abs(rx).^2)/length(rx);
-            
-            statusText.String = sprintf('E:%.4f | TX:%d RX:%d', e, getappdata(hFig,'txcount'), getappdata(hFig,'rxcount'));
-            
-            if e > 0.01
-                [msg, ok, isAck] = decodeFrame(rx);
-                
-                if ok && isAck
-                    % Received ACK - stop retry
-                    ackT = getappdata(hFig,'ackTimer');
-                    if ~isempty(ackT) && isvalid(ackT)
-                        stop(ackT);
-                        delete(ackT);
-                    end
-                    addLog('ACK received!', 'ack');
-                    statusText.String = sprintf('ACK OK! | E:%.4f', e);
-                    
-                elseif ok && ~isempty(msg)
-                    rc = getappdata(hFig,'rxcount') + 1;
-                    setappdata(hFig,'rxcount',rc);
-                    addLog(msg, 'recv');
-                    statusText.String = sprintf('RX:%d DECODED! | E:%.4f', rc, e);
-                    
-                    % Send ACK back
-                    sendAck();
-                else
-                    if e > 0.05
-                        statusText.String = sprintf('Signal but no decode | E:%.4f', e);
-                    end
+            if e > 100
+                [msg,ok]=tryDecode(rx,e);
+                if ok && ~isempty(msg)
+                    rc=rc+1; setappdata(hFig,'rxcount',rc);
+                    addLog(msg,'recv');
+                    statusText.String=sprintf('RX:%d OK! | E:%.0f',rc,e);
                 end
             end
             
         catch ME
-            statusText.String = ['ERR:' ME.message(1:25)];
+            statusText.String=['ERR:' ME.message(1:25)];
         end
     end
 
-    function sendAck()
-        try
-            sdr = getappdata(hFig,'sdr');
-            cfg = getappdata(hFig,'cfg');
-            txdata = makeFrame('<ACK>');
-            txdata = txdata(:)';
-            cfg{1} = real(txdata);
-            cfg{2} = imag(txdata);
-            stepImpl(sdr, cfg);
-        catch
-        end
-    end
-
-    %% ========== Frame Building ==========
-    function txdata = makeFrame(msgStr)
-        target_len = buf_size;
-        
-        % Convert text to bits
-        msgBytes = uint8(msgStr)';
-        nBytes = length(msgBytes);
-        
-        % Build bit stream: preamble + sync + length + crc + data
-        % Preamble: alternating pattern for AGC
-        preamble = repmat([1 -1], 1, PREAMBLE_LEN/2);
-        
-        % Sync: longer pattern for correlation
-        sync = repmat([1 -1 1 -1], 1, SYNC_LEN/4);
-        
-        % Length field (16 bits)
-        lenBits = dec2bin(nBytes, 16) - '0';
-        
-        % Data bits
-        dataBits = [];
-        for b = msgBytes
-            db = dec2bin(b, 8) - '0';
-            dataBits = [dataBits, db];
+    %% ========== Signal Generation (Pure Baseband) ==========
+    function [iOut,qOut] = makeSignal(textMsg)
+        % Convert text to bytes then to bits
+        txtBytes = uint8(textMsg)';
+        allBits = [];
+        for b = double(txtBytes)
+            db = de2bi(b,8,'left-msb')';
+            allBits = [allBits, db(:)'];
         end
         
-        % Simple CRC (XOR of all bytes)
-        crcVal = mod(sum(double(msgBytes)), 256);
-        crcBits = dec2bin(crcVal, 8) - '0';
+        % Sync pattern: strong alternating signal for detection
+        syncLen = 200;
+        syncBits = repmat([1 0], 1, syncLen);
         
-        % Combine all
-        frameBits = [preamble, sync, lenBits, crcBits, dataBits];
+        % Combine: sync + data + some padding
+        frameBits = [syncBits, allBits];
+        nBits = length(frameBits);
         
-        % BPSK modulation: 0 -> +1, 1 -> -1
-        symbols = 1 - 2*frameBits;
+        % BPSK mapping: 0->+1, 1->-1
+        bpskSym = 1 - 2*frameBits;
         
-        % SRRC filter
-        sps = 4;
-        firLen = 32;
-        fir = rcosdesign(0.5, firLen, sps);
+        % Simple up-sample by factor of sps (no filter needed at low rate)
+        sps = 10;  % samples per symbol
+        upSig = zeros(1, nBits*sps);
+        upSig(1:sps:end) = bpskSym;
         
-        sigUp = zeros(1, length(symbols)*sps);
-        sigUp(1:sps:end) = symbols;
-        sigFilt = conv(sigUp, fir, 'same');
-        
-        % Carrier modulation
-        t = (0:length(sigFilt)-1)/Fs;
-        baseband = sigFilt .* exp(1j*2*pi*audio_fc*t);
-        
-        % Normalize and pad
-        baseband = baseband / max(abs(baseband)+eps) * 0.8;
-        
-        % Pad or truncate to target_len
-        if length(baseband) < target_len
-            basepad = [baseband, zeros(1, target_len-length(baseband))];
+        % Pad or truncate to buffer size
+        if length(upSig) < buf_size
+            upSig = [upSig, zeros(1, buf_size-length(upSig))];
         else
-            basepad = baseband(1:target_len);
+            upSig = upSig(1:buf_size);
         end
         
-        txdata = basepad(:)';
+        % Output as I/Q (real only on I channel, Q=0 for BPSK)
+        iOut = upSig * 16000;   % Scale for PLUTO (14-bit DAC)
+        qOut = zeros(size(iOut));
     end
 
-    %% ========== Frame Decoding ==========
-    function [text, success, isAck] = decodeFrame(rxSignal)
-        text = '';
+    %% ========== Simple Decoder ==========
+    function [msg, success] = tryDecode(sig, energy)
+        msg = '';
         success = false;
-        isAck = false;
         
         try
-            % Down-convert
-            t = (0:length(rxSignal)-1)/Fs;
-            baseband = rxSignal .* exp(-1j*2*pi*audio_fc*t);
-            bbReal = real(baseband);
+            r = real(sig);  % Use I channel only
             
-            % Matched filter
-            sps = 4;
-            fir = rcosdesign(0.5, 32, sps);
-            filtered = conv(bbReal, fir, 'same');
+            % Normalize
+            r = r / (max(abs(r))+eps);
             
-            % Down-sample
-            downSampled = filtered(1:sps:end);
+            % Find sync pattern [1,-1,1,-1,...]
+            syncPattern = repmat([1,-1], 1, 100);
+            corr = abs(conv(fliplr(syncPattern), r));
+            [val, pos] = max(corr);
             
-            % Correlate to find sync pattern
-            syncPattern = repmat([1 -1 1 -1], 1, SYNC_LEN/4);
-            preamblePattern = repmat([1 -1], 1, PREAMBLE_LEN/2);
-            fullHeader = [preamblePattern, syncPattern];
-            
-            dsLen = int32(length(downSampled));
-            dsMax = int32(min(dsLen, 3000));
-            corr = abs(conv(fliplr(fullHeader), downSampled(1:dsMax)));
-            [~, maxIdx] = max(corr);
-            startIdx = int32(maxIdx) - int32(length(fullHeader)) + 1;
-            
-            if startIdx < 10 || startIdx > dsLen - 200
+            if val < 80  % Correlation too weak
                 return;
             end
             
-            % Extract frame fields after header - all indices as int32
-            hdrEnd = startIdx + PREAMBLE_LEN + SYNC_LEN - 1;
-            dataStart = hdrEnd + 1;
-            
-            if double(dataStart) + LEN_FIELD + 8 > length(downSampled)
+            % Position after sync
+            dataStart = pos + 100;
+            if dataStart < 10 || dataStart+80 > length(r)
                 return;
             end
             
-            % Read length field
-            lEnd = int32(dataStart) + LEN_FIELD - 1;
-            lenBits = downSampled(int32(dataStart):lEnd) < 0;
-            nDataBits = double(bi2de(lenBits')) * 8;
-            nDataBits = min(floor(nDataBits), 200);
+            % Extract bits (down-sample: every 10th sample)
+            sps = 10;
+            dataSamples = r(dataStart:min(length(r),dataStart+sps*300));
             
-            % Read CRC
-            crcStart = int32(dataStart + LEN_FIELD);
-            cEnd = int32(crcStart + 7);
-            crcRx = downSampled(crcStart:cEnd) < 0;
-            
-            % Read data - all indices as explicit scalars
-            dataStart2 = double(crcStart) + 8;
-            maxBits = double(length(downSampled)) - dataStart2;
-            nDataBits = min(floor(nDataBits), maxBits);
-            nDataBits = max(floor(nDataBits), 0);
-            
-            if nDataBits < 8
+            if length(dataSamples) < 80
                 return;
             end
             
-            i1 = int32(dataStart2);
-            i2 = int32(min(i1 + nDataBits - 1, int32(length(downSampled))));
-            if i2 >= i1
-                sel = double(i1):double(i2);
-                dataBits = downSampled(sel) < 0;
-            else
-                dataBits = [];
+            % Sample one per symbol period
+            bitIdx = 1:sps:length(dataSamples)-sps+1;
+            rawBits = dataSamples(bitIdx);
+            
+            % Threshold decision
+            decodedBits = rawBits > 0;
+            
+            % Group into bytes
+            nBytes = floor(length(decodedBits)/8);
+            if nBytes < 1
                 return;
             end
             
-            % Convert bits to bytes
-            nFullBytes = floor(double(length(dataBits))/8);
-            bEnd = int32(min(floor(nFullBytes * 8), length(dataBits)));
-            data8 = dataBits(1:int32(bEnd));
-            data8 = reshape(data8, 8, [])';
-            bytes = uint8(bi2de(data8));
+            byteBits = decodedBits(1:nBytes*8);
+            byteBits = reshape(byteBits, 8, [])';
+            outBytes = uint8(bi2de(byteBits));
             
-            % Filter printable ASCII
-            validIdx = bytes >= 32 & bytes <= 126;
-            bytes = bytes(validIdx);
-            
-            if isempty(bytes)
+            % Keep only printable ASCII
+            valid = outBytes >= 32 & outBytes <= 126;
+            if sum(valid) < 1
                 return;
             end
             
-            decoded = char(bytes);
-            
-            % Check for ACK message
-            if strcmp(decoded, '<ACK>')
-                isAck = true;
-                success = true;
-                return;
-            end
-            
-            % Verify CRC
-            crcCalc = mod(sum(double(bytes)), 256);
-            crcReceived = bi2de(crcRx');
-            if crcCalc == crcReceived
-                text = decoded;
-                success = true;
-            end
+            msg = char(outBytes(valid));
+            success = true;
             
         catch
         end
@@ -446,8 +273,7 @@ function pluto_chat_reliable()
     hFig.CloseRequestFcn = @(~,~) cleanup();
     
     function cleanup()
-        onDisconnect();
-        delete(hFig);
+        onDisconnect(); delete(hFig);
     end
 
 end
