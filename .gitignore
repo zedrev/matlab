@@ -1,0 +1,23 @@
+# MATLAB
+*.mat
+!code/matlab/*.mat
+*.asv
+*.mexa64
+*.mexw64
+
+# Simulink
+*.slx
+slprj/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# Logs
+*.log
+
+# Temporary
+*.tmp
