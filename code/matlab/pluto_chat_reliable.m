@@ -394,13 +394,14 @@ function pluto_chat_reliable()
                 return;
             end
             
-            dEnd = min(dataStart2 + nDataBits - 1, length(downSampled));
-            dataBits = downSampled(dataStart2:dEnd) < 0;
+            dEnd = min(floor(dataStart2 + nDataBits - 1), length(downSampled));
+            dEnd = max(dEnd, dataStart2); % Ensure valid range
+            dataBits = downSampled(dataStart2:floor(double(dEnd))) < 0;
             
             % Convert bits to bytes
             nFullBytes = floor(double(length(dataBits))/8);
-            dEnd2 = min(nFullBytes*8, length(dataBits));
-            data8 = dataBits(1:dEnd2);
+            dEnd2 = min(floor(double(nFullBytes*8)), length(dataBits));
+            data8 = dataBits(1:floor(double(dEnd2)));
             data8 = reshape(data8, 8, [])';
             bytes = uint8(bi2de(data8));
             
