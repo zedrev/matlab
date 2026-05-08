@@ -63,22 +63,17 @@ function pluto_chat_dual()
             
             cfg = cell(1, sdr.in_ch_no + length(sdr.iio_dev_cfg.cfg_ch));
             
-            % Set channels safely
-            function sc(name,val)
-                idx = sdr.getInChannel(name);
-                if idx >= 1, cfg{idx}=val; end
-            end
-            
-            sc('TX_LO_FREQ',Fc);
-            sc('TX_SAMPLING_FREQ',Fs);
-            sc('TX_RF_BANDWIDTH',20e6);
-            sc('RX_LO_FREQ',Fc);
-            sc('RX_SAMPLING_FREQ',Fs);
-            sc('RX_RF_BANDWIDTH',20e6);
-            sc('RX1_GAIN_MODE','manual');
-            sc('RX_GAIN_MODE','manual');
-            sc('RX1_GAIN',40);
-            sc('RX_GAIN',40);
+            % Set channels - direct calls (no nested functions)
+            idx = sdr.getInChannel('TX_LO_FREQ'); if idx>=1, cfg{idx}=Fc; end
+            idx = sdr.getInChannel('TX_SAMPLING_FREQ'); if idx>=1, cfg{idx}=Fs; end
+            idx = sdr.getInChannel('TX_RF_BANDWIDTH'); if idx>=1, cfg{idx}=20e6; end
+            idx = sdr.getInChannel('RX_LO_FREQ'); if idx>=1, cfg{idx}=Fc; end
+            idx = sdr.getInChannel('RX_SAMPLING_FREQ'); if idx>=1, cfg{idx}=Fs; end
+            idx = sdr.getInChannel('RX_RF_BANDWIDTH'); if idx>=1, cfg{idx}=20e6; end
+            idx = sdr.getInChannel('RX1_GAIN_MODE'); if idx>=1, cfg{idx}='manual'; end
+            idx = sdr.getInChannel('RX_GAIN_MODE'); if idx>=1, cfg{idx}='manual'; end
+            idx = sdr.getInChannel('RX1_GAIN'); if idx>=1, cfg{idx}=40; end
+            idx = sdr.getInChannel('RX_GAIN'); if idx>=1, cfg{idx}=40; end
             
             setappdata(hFig,'sdr',sdr);
             setappdata(hFig,'cfg',cfg);
