@@ -155,7 +155,7 @@ function pluto_chat_reliable()
         if ~isempty(oldT) && isvalid(oldT), stop(oldT); delete(oldT); end
         
         newT = timer('StartDelay', 2.0, ...
-                      'TimerFn', @{@onAckTimeout, msg});
+                      'TimerFcn', {@onAckTimeout, msg});
         start(newT);
         setappdata(hFig,'ackTimer', newT);
         setappdata(hFig,'pendingMsg', msg);
