@@ -71,6 +71,10 @@ function pluto_chat_reliable()
             idx = sdr.getInChannel('RX1_GAIN'); if idx>=1, cfg{idx}=50; end
             idx = sdr.getInChannel('RX_GAIN'); if idx>=1, cfg{idx}=50; end
             
+            % Data channels must have arrays of correct size
+            cfg{1} = zeros(1, buf_size);
+            cfg{2} = zeros(1, buf_size);
+            
             stepImpl(sdr, cfg);
             
             setappdata(hFig,'sdr',sdr);
